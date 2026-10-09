@@ -398,11 +398,17 @@ MBE_API void mbe_ambe2400EncoderFree(mbe_ambe2400_encoder* enc);
  * (interleave, scrambler and Golay parity cross-checked against the MMDVM
  * tables). The spectral reconstruction it targets matches DVSI's AMBE-3000
  * D-STAR test vectors; on-air interoperability has not been verified.
- * Every frame is a voice frame, as from DVSI's encoder: quiet and silent
- * input is coded as low-level voice, and the decoded level follows the input
- * level (there is no AGC). Earlier versions normalized the level and sent
- * the AMBE silence frame (b0 127, tone index 128) for quiet input; this
- * library's decoders play that frame as comfort noise and reset.
+ * Speech, quiet and silent input are coded as voice frames, as by DVSI's
+ * encoder: quiet and silent input is coded as low-level voice, and the
+ * decoded level follows the input level (there is no AGC). Earlier versions
+ * normalized the level and sent the AMBE silence frame (b0 127, tone index
+ * 128) for quiet input; this library's decoders play that frame as comfort
+ * noise and reset. DTMF digits, call-progress tones (dial, ring, busy and
+ * 350 + 490 Hz) and single tones (200 Hz, 400-3800 Hz) are sent as D-STAR
+ * tone frames (b0 126), in the layout DVSI's encoder uses; as DVSI's encoder
+ * does, the frame after the last detected tone frame repeats it once. For a
+ * tone frame, cur_mp is set to prev_mp, since tone frames do not change the
+ * decoder's prediction history.
  *
  * Initialize with mbe_ambe2400EncoderAlloc() and mbe_initMbeParms(), then
  * advance prediction state with mbe_moveMbeParms(cur_mp, prev_mp) between
@@ -664,9 +670,9 @@ MBE_API void mbe_ambe2450EncoderFree(mbe_ambe2450_encoder* enc);
  * quantized against this library's AMBE+2 tables. The prediction history is
  * kept inside the context and updated by decoding each emitted frame with
  * mbe_decodeAmbe2450Parms(), so that the encoder's prediction remains
- * identical to the decoder's. DTMF digits and single tones (200 Hz,
- * 400-3800 Hz) are sent as TIA-102.BABA-1 tone frames, which do not update
- * the prediction history.
+ * identical to the decoder's. DTMF digits, call-progress tones (dial, ring,
+ * busy and 350 + 490 Hz) and single tones (200 Hz, 400-3800 Hz) are sent as
+ * TIA-102.BABA-1 tone frames, which do not update the prediction history.
  *
  * The analysis looks two frames ahead: the bits returned by call n describe
  * the 20 ms of input given to call n - 3 (60 ms delay). The first three calls

@@ -14,7 +14,7 @@
  * C port of ham_digital_modes' float tone_detect.rs: recognizes a DTMF digit
  * or a single sustained tone in one 20 ms frame, matched by its author to the
  * AMBE-3000 chip's own detector, so an encoder can send a tone frame instead
- * of coding the tone as speech.
+ * of coding the tone as speech. Call-progress tone pairs are detected as well.
  */
 #ifndef MBELIB_NEO_INTERNAL_MBE_TONE_DETECT_H
 #define MBELIB_NEO_INTERNAL_MBE_TONE_DETECT_H
@@ -23,8 +23,9 @@
 
 enum mbe_tone_detect_kind {
     MBE_TONE_DETECT_NONE = 0,
-    MBE_TONE_DETECT_DTMF,   /* row 0-3 (697..941 Hz), column 0-3 (1209..1633 Hz) */
-    MBE_TONE_DETECT_SINGLE, /* index = round(f / 31.25 Hz) */
+    MBE_TONE_DETECT_DTMF,          /* row 0-3 (697..941 Hz), column 0-3 (1209..1633 Hz) */
+    MBE_TONE_DETECT_SINGLE,        /* index = round(f / 31.25 Hz) */
+    MBE_TONE_DETECT_CALL_PROGRESS, /* index 0-3: 350+440, 440+480, 480+620, 350+490 Hz */
 };
 
 struct mbe_tone_detection {

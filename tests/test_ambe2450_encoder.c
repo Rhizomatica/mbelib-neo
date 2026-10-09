@@ -180,16 +180,18 @@ test_pitch_tracking(mbe_ambe2450_encoder* enc) {
     return fails;
 }
 
-/* DTMF digits and single tones become tone frames the decoder plays as tones. */
+/* DTMF digits, call-progress tones and single tones become tone frames the
+ * decoder plays as tones. */
 static int
 test_tones(mbe_ambe2450_encoder* enc) {
     struct {
         double f1, f2;
         int id;
-    } cases[4] = {{770.0, 1336.0, 0x85}, {941.0, 1336.0, 0x80}, {941.0, 1477.0, 0x8F}, {1000.0, 0.0, 32}};
+    } cases[6] = {{770.0, 1336.0, 0x85}, {941.0, 1336.0, 0x80}, {941.0, 1477.0, 0x8F},
+                  {1000.0, 0.0, 32},     {350.0, 440.0, 0xA0},  {480.0, 620.0, 0xA2}};
 
     int fails = 0;
-    for (int c = 0; c < 4; c++) {
+    for (int c = 0; c < 6; c++) {
         mbe_parms cur, prev, enhanced;
         mbe_ambe2450EncoderReset(enc);
         mbe_initMbeParms(&cur, &prev, &enhanced);
