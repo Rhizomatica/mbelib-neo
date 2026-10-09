@@ -564,9 +564,13 @@ ambe2400_encode_voice(mbe_ambe2400_encoder* enc, char ambe_d[49], mbe_parms* cur
  * @param prev_mp Input: previous frame state (see mbe_initMbeParms()).
  * @return 0, or negative on error (the context is unchanged).
  */
-/* Finite and within +-2^20 (0x49800000), checked on the bit pattern so the
- * test survives fast-math. One bad sample would otherwise poison the DC
- * filter and analysis history for the rest of the stream. */
+/* Accept only finite samples of magnitude at most 2^20 (bit pattern
+ * 0x49800000). The test inspects the IEEE 754 bit pattern rather than using
+ * isfinite() or comparisons, because the library may be compiled with
+ * MBELIB_ENABLE_FAST_MATH (-ffast-math, /fp:fast), under which the compiler
+ * is permitted to assume that no value is NaN or infinite and may remove such
+ * checks. A single invalid sample would otherwise corrupt the DC filter and
+ * analysis history for the remainder of the stream. */
 static bool
 ambe2400_enc_samples_valid(const float* samples) {
     for (int i = 0; i < AMBE2400_ENC_SAMPLES; i++) {
