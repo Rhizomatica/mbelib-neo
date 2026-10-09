@@ -679,11 +679,14 @@ test_pitch_endpoint(mbe_ambe2400_encoder* enc, int period, int expected_b0) {
     char d[49];
     float pcm[160];
     mbe_initMbeParms(&c, &p, &h);
-    /* A long steady run, so period 20 exposes the old interior-minimum fallback. */
+    /* A long steady run, so period 20 exposes the old interior-minimum fallback.
+     * The second harmonic keeps a 400 Hz fundamental from being sent as a
+     * single-tone frame. */
     for (int frame = 0; frame < 200; frame++) {
         for (int i = 0; i < 160; i++) {
             int phase = (frame * 160 + i) % period;
-            pcm[i] = 0.1f * sinf((float)(2.0 * M_PI * phase / period));
+            double x = 2.0 * M_PI * phase / period;
+            pcm[i] = (float)(0.1 * (sin(x) + (0.5 * sin(2.0 * x))));
         }
         if (mbe_encodeAmbe2400Parms(enc, pcm, d, &c, &p) != 0) {
             return 1;
@@ -1052,6 +1055,158 @@ test_quiet_input(mbe_ambe2400_encoder* enc) {
     return peak > 64.0;
 }
 
+/* Encode `frames` frames of one or two sinusoids of peak amplitude `amplitude`
+ * (full scale 1.0) each. Counts the frames decoded as tone frames with tone
+ * index `expected` (after the first two), and returns the decoded level of
+ * those frames minus the input level, in dB. Also checks that a tone frame
+ * leaves the prediction history unchanged. */
+static double
+tone_run(mbe_ambe2400_encoder* enc, double f1, double f2, double amplitude, int frames, int expected, int* tone_frames,
+         int* history_changed) {
+    mbe_ambe2400EncoderReset(enc);
+    mbe_parms ec, ep, eh, dc, dp, dh;
+    mbe_initMbeParms(&ec, &ep, &eh);
+    mbe_initMbeParms(&dc, &dp, &dh);
+    double in_sum = 0.0;
+    double out_sum = 0.0;
+    *tone_frames = 0;
+    *history_changed = 0;
+    for (int frame = 0; frame < frames; frame++) {
+        float pcm[160], out[160];
+        char bits[49];
+        for (int i = 0; i < 160; i++) {
+            double t = (double)((frame * 160) + i) / 8000.0;
+            double v = amplitude * sin(2.0 * M_PI * f1 * t);
+            if (f2 > 0.0) {
+                v += amplitude * sin(2.0 * M_PI * f2 * t);
+            }
+            pcm[i] = (float)v;
+        }
+        mbe_process_result result;
+        mbe_initProcessResult(&result);
+        if (mbe_encodeAmbe2400Parms(enc, pcm, bits, &ec, &ep) != 0
+            || mbe_processAmbe2400Dataf(out, &result, bits, &dc, &dp, &dh) < 0) {
+            return 1e9;
+        }
+        /* The tone index, as the decoder reads it. */
+        mbe_parms scratch_cur = ec;
+        mbe_parms scratch_prev = ep;
+        int index = mbe_decodeAmbe2400Parms(bits, &scratch_cur, &scratch_prev);
+        int is_tone = (result.flags & MBE_PROCESS_FLAG_TONE) != 0u;
+        for (int l = 0; is_tone && l <= 56; l++) {
+            if (!float_bits_equal(ec.log2Ml[l], ep.log2Ml[l])) {
+                (*history_changed)++;
+                break;
+            }
+        }
+        mbe_moveMbeParms(&ec, &ep);
+        if (frame >= 2 && is_tone && index == expected) {
+            (*tone_frames)++;
+            for (int i = 0; i < 160; i++) {
+                double t = (double)((frame * 160) + i) / 8000.0;
+                double v = amplitude * sin(2.0 * M_PI * f1 * t);
+                if (f2 > 0.0) {
+                    v += amplitude * sin(2.0 * M_PI * f2 * t);
+                }
+                in_sum += v * v;
+                out_sum += (7.0 * (double)out[i] / 32768.0) * (7.0 * (double)out[i] / 32768.0);
+            }
+        }
+    }
+#ifdef MBELIB_TEST_NOTONES
+    /* NOTONES decoders play tone frames as silence; only the frames are checked. */
+    (void)out_sum;
+    (void)in_sum;
+    return (*tone_frames > 0) ? 0.0 : 1e9;
+#else
+    return (*tone_frames > 0) ? 10.0 * log10(out_sum / in_sum) : 1e9;
+#endif
+}
+
+/* DTMF digits, call-progress tones and single tones are sent as D-STAR tone
+ * frames with the decoder's tone index, decode at the input level (the
+ * volume field is 0.355 dB per step) and leave the prediction history
+ * unchanged; a ring tone 1.6% off frequency is coded as voice. */
+static int
+test_tone_frames(mbe_ambe2400_encoder* enc) {
+    static const double rows[4] = {697.0, 770.0, 852.0, 941.0};
+    static const double cols[4] = {1209.0, 1336.0, 1477.0, 1633.0};
+    static const double call_progress[4][2] = {{350.0, 440.0}, {440.0, 480.0}, {480.0, 620.0}, {350.0, 490.0}};
+    static const double singles[4][2] = {{200.0, 6.0}, {1000.0, 32.0}, {2000.0, 64.0}, {3500.0, 112.0}};
+    int fails = 0;
+    int tone_frames;
+    int changed;
+    double worst = 0.0;
+
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 4; c++) {
+            double delta = tone_run(enc, rows[r], cols[c], 0.1, 12, 128 + (4 * c) + r, &tone_frames, &changed);
+            fails += tone_frames < 9 || changed != 0 || fabs(delta) > 1.0;
+            worst = fmax(worst, fabs(delta));
+        }
+    }
+    for (int k = 0; k < 4; k++) {
+        double delta =
+            tone_run(enc, call_progress[k][0], call_progress[k][1], 0.1, 12, 144 + k, &tone_frames, &changed);
+        fails += tone_frames < 9 || changed != 0 || fabs(delta) > 1.0;
+        worst = fmax(worst, fabs(delta));
+    }
+    for (int k = 0; k < 4; k++) {
+        double delta = tone_run(enc, singles[k][0], 0.0, 0.2, 12, (int)singles[k][1], &tone_frames, &changed);
+        fails += tone_frames < 9 || changed != 0 || fabs(delta) > 1.0;
+        worst = fmax(worst, fabs(delta));
+    }
+    (void)tone_run(enc, 433.0, 484.0, 0.1, 12, 145, &tone_frames, &changed);
+    fails += tone_frames != 0;
+    printf("tone frames: 16 DTMF digits, 4 call-progress and 4 single tones, worst level error %.2f dB; "
+           "mistuned ring coded as voice: %s\n",
+           worst, (tone_frames == 0) ? "yes" : "no");
+    return fails != 0;
+}
+
+static int
+is_dstar_tone(const char bits[49]) {
+    int b0 = bits[48];
+    for (int i = 0; i < 6; i++) {
+        b0 |= (int)bits[i] << (6 - i);
+    }
+    return (b0 & 0x7E) == 0x7E;
+}
+
+/* The frame after the last detected tone frame repeats it once, as DVSI's
+ * encoder sends the frame in which a tone ends; later frames are voice. */
+static int
+test_tone_hold(mbe_ambe2400_encoder* enc) {
+    mbe_ambe2400EncoderReset(enc);
+    mbe_parms c, p, h;
+    mbe_initMbeParms(&c, &p, &h);
+    char bits[16][49];
+    for (int frame = 0; frame < 16; frame++) {
+        float pcm[160];
+        for (int i = 0; i < 160; i++) {
+            long n = ((long)frame * 160) + i;
+            /* 1 kHz for 970 samples, then silence: the tone ends inside a frame. */
+            pcm[i] = (n < 970) ? (float)(0.2 * sin(2.0 * M_PI * 1000.0 * (double)n / 8000.0)) : 0.0f;
+        }
+        if (mbe_encodeAmbe2400Parms(enc, pcm, bits[frame], &c, &p) != 0) {
+            return 1;
+        }
+        mbe_moveMbeParms(&c, &p);
+    }
+    int last = -1;
+    for (int frame = 0; frame < 16; frame++) {
+        if (is_dstar_tone(bits[frame])) {
+            last = frame;
+        }
+    }
+    int ok = last >= 2 && memcmp(bits[last], bits[last - 1], 49) == 0;
+    for (int frame = last + 1; ok && frame < 16; frame++) {
+        ok = !is_dstar_tone(bits[frame]);
+    }
+    printf("tone hold: the frame after the last detected tone repeats it once: %s\n", ok ? "yes" : "no");
+    return !ok;
+}
+
 /* Compare interleaved streams with standalone replays, then replay after reset.
  * The sequence exercises pitch, voicing, PCM history and silent input. */
 static int
@@ -1136,6 +1291,8 @@ main(void) {
     fails += test_level_follows_input(enc);
     fails += test_quiet_tone_level(enc);
     fails += test_quiet_input(enc);
+    fails += test_tone_frames(enc);
+    fails += test_tone_hold(enc);
     mbe_ambe2400EncoderFree(enc);
     printf("%s\n", fails ? "SOME TESTS FAILED" : "ALL OK");
     return fails ? 1 : 0;

@@ -37,10 +37,12 @@
  *    QUANTIZED values, mirroring the decoder state so the encoder and
  *    decoder never drift apart.
  *
- * Every frame is a voice frame, as from DVSI's encoder: quiet and silent
- * input is coded as low-level voice rather than as a silence frame, and the
- * decoded level follows the input level (there is no AGC). Tone (DTMF)
- * encoding is not supported.
+ * Speech, quiet and silent input are coded as voice frames, as by DVSI's
+ * encoder: quiet and silent input is coded as low-level voice rather than as
+ * a silence frame, and the decoded level follows the input level (there is
+ * no AGC). DTMF digits, call-progress tones and single tones (mbe_tone_detect.c)
+ * are sent as D-STAR tone frames, in the layout DVSI's encoder uses; as DVSI's
+ * encoder does, the frame after the last detected tone frame repeats it once.
  */
 
 #include <math.h>
@@ -53,6 +55,8 @@
 #include "ambe3600x2400_internal.h"
 #include "mbe_ecc.h"
 #include "mbe_speech_analysis.h"
+#include "mbe_tone.h"
+#include "mbe_tone_detect.h"
 #include "mbe_unvoiced_fft.h"
 #include "mbe_validation.h"
 #include "mbelib-neo/mbelib.h"
@@ -81,6 +85,8 @@ struct mbe_ambe2400_encoder {
     mbe_fft_plan* fft;
     mbe_acf_plan* acf;
     struct mbe_analysis_tables tables;
+    char tone_hold[49];  /* the last detected tone frame */
+    int tone_hold_valid; /* 1 when tone_hold may be repeated in the next frame */
 };
 
 void
@@ -89,6 +95,8 @@ mbe_ambe2400EncoderReset(mbe_ambe2400_encoder* enc) {
         return;
     }
     mbe_analysis_reset(&enc->analysis);
+    memset(enc->tone_hold, 0, sizeof(enc->tone_hold));
+    enc->tone_hold_valid = 0;
 }
 
 mbe_ambe2400_encoder*
@@ -521,6 +529,103 @@ ambe2400_enc_fill_parms(const struct ambe2400_enc_frame* q, mbe_parms* cur_mp) {
     cur_mp->gamma = q->gamma_q;
 }
 
+/* D-STAR tone index of a detected tone, the inverse of
+ * mbe_tone_lookup_dstar_freqs(): single tones round(f / 31.25 Hz), DTMF
+ * 128 + 4 * column + row, call-progress tones 144-147. */
+static int
+ambe2400_enc_tone_index(const struct mbe_tone_detection* det) {
+    if (det->kind == MBE_TONE_DETECT_DTMF) {
+        return 128 + (4 * det->col) + det->row;
+    }
+    if (det->kind == MBE_TONE_DETECT_CALL_PROGRESS) {
+        return 144 + det->index;
+    }
+    return det->index;
+}
+
+/* The 8-bit tone volume for a per-tone peak amplitude on the 16-bit scale:
+ * the inverse of the level law the decoder plays D-STAR tone frames with
+ * (mbe_tone_dstar_level_db, peak sqrt(2) * 32768 * 10^(dB/20) after the
+ * factor of 7 applied by the float-to-16-bit output conversion). The volume
+ * is at least 1, since volume 0 with index 128 decodes as a silence frame. */
+static int
+ambe2400_enc_tone_volume(double amplitude) {
+    double level_db = 20.0 * log10(fmax(amplitude, 1.0) / (M_SQRT2 * 32768.0));
+    long volume = lround(255.0 + ((level_db - MBE_TONE_DSTAR_DB_AT_VOL255) / MBE_TONE_DSTAR_DB_PER_STEP));
+    return (volume < 1) ? 1 : ((volume > 255) ? 255 : (int)volume);
+}
+
+/*
+ * D-STAR tone frame, as DVSI's AMBE-3000 encoder sends it: b0 = 126, the
+ * index's three most significant bits selected by ambe_d[6..8] through the
+ * decoder's lookup tables, its other bits at 9, 42, 43, 10 and 11, the volume
+ * at 12-16, 44, 45 and 17 (most significant first), and every other bit zero.
+ */
+static void
+ambe2400_enc_pack_tone(int index, int volume, char ambe_d[49]) {
+    static const int t7tab[8] = {1, 0, 0, 0, 0, 1, 1, 1};
+    static const int t6tab[8] = {0, 0, 0, 1, 1, 1, 1, 0};
+    static const int t5tab[8] = {0, 0, 1, 0, 1, 1, 0, 1};
+    static const int volume_bits[8] = {12, 13, 14, 15, 16, 44, 45, 17};
+    int select = 0;
+    for (int s = 0; s < 8; s++) {
+        if (t7tab[s] == ((index >> 7) & 1) && t6tab[s] == ((index >> 6) & 1) && t5tab[s] == ((index >> 5) & 1)) {
+            select = s;
+        }
+    }
+    memset(ambe_d, 0, 49);
+    for (int i = 0; i < 6; i++) {
+        ambe_d[i] = 1;
+    }
+    ambe_d[6] = (char)((select >> 2) & 1);
+    ambe_d[7] = (char)((select >> 1) & 1);
+    ambe_d[8] = (char)(select & 1);
+    ambe_d[9] = (char)((index >> 4) & 1);
+    ambe_d[42] = (char)((index >> 3) & 1);
+    ambe_d[43] = (char)((index >> 2) & 1);
+    ambe_d[10] = (char)((index >> 1) & 1);
+    ambe_d[11] = (char)(index & 1);
+    for (int i = 0; i < 8; i++) {
+        ambe_d[volume_bits[i]] = (char)((volume >> (7 - i)) & 1);
+    }
+}
+
+/*
+ * Detect a DTMF digit, call-progress tone or single tone in the 160 samples
+ * centred on the analysis centre, and if one is found, pack its tone frame.
+ *
+ * When no tone is detected in the frame following a detected tone, that tone
+ * frame is sent once more, as DVSI's AMBE-3000 encoder does: on DVSI's D-STAR
+ * tone vectors the frame in which a tone ends or changes to another tone,
+ * whose window holds only part of the tone, repeats the previous tone frame
+ * (145 of 149 such frames are bit-identical to it).
+ *
+ * A tone frame does not change the decoder's prediction history, so cur_mp
+ * is set to prev_mp.
+ */
+static int
+ambe2400_encode_tone(mbe_ambe2400_encoder* enc, char ambe_d[49], mbe_parms* cur_mp, const mbe_parms* prev_mp) {
+    double window[MBE_TONE_DETECT_FRAME];
+    const float* centre = enc->analysis.buf + (MBE_ANALYSIS_HISTORY - 1);
+    struct mbe_tone_detection det;
+
+    for (int i = 0; i < MBE_TONE_DETECT_FRAME; i++) {
+        window[i] = (double)centre[i - (MBE_TONE_DETECT_FRAME / 2)];
+    }
+    if (mbe_tone_detect(window, &det) != MBE_TONE_DETECT_NONE) {
+        ambe2400_enc_pack_tone(ambe2400_enc_tone_index(&det), ambe2400_enc_tone_volume(det.amplitude), ambe_d);
+        memcpy(enc->tone_hold, ambe_d, sizeof(enc->tone_hold));
+        enc->tone_hold_valid = 1;
+    } else if (enc->tone_hold_valid) {
+        memcpy(ambe_d, enc->tone_hold, sizeof(enc->tone_hold));
+        enc->tone_hold_valid = 0;
+    } else {
+        return 0;
+    }
+    *cur_mp = *prev_mp;
+    return 1;
+}
+
 /* Analyze and quantize a voice frame, reconstruct its predictor state, and
  * pack 49 bits. */
 static int
@@ -529,6 +634,10 @@ ambe2400_encode_voice(mbe_ambe2400_encoder* enc, char ambe_d[49], mbe_parms* cur
     int status = mbe_analysis_frame(&enc->tables, &enc->analysis, enc->fft, enc->acf, &res);
     if (status < 0) {
         return status;
+    }
+    /* The analysis above keeps the pitch tracking continuous through tones. */
+    if (ambe2400_encode_tone(enc, ambe_d, cur_mp, prev_mp)) {
+        return 0;
     }
     struct ambe2400_enc_frame q = {0};
     unsigned char columns[MBE_ANALYSIS_COLUMNS];

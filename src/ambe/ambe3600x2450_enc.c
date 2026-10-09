@@ -347,6 +347,9 @@ ambe2450_enc_tone_id(const struct mbe_tone_detection* det) {
     if (det->kind == MBE_TONE_DETECT_DTMF) {
         return 0x80 | nibble[det->row & 3][det->col & 3];
     }
+    if (det->kind == MBE_TONE_DETECT_CALL_PROGRESS) {
+        return 160 + det->index; /* 0xA0-0xA3 */
+    }
     return det->index;
 }
 
