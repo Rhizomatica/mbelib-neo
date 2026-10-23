@@ -1,0 +1,37 @@
+Source: mbelib-neo
+Section: libs
+Priority: optional
+Maintainer: Rafael Diniz <rafael@riseup.net>
+Rules-Requires-Root: no
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake (>= 3.20),
+ pkg-config,
+Standards-Version: 4.7.2
+Homepage: https://github.com/arancormonk/mbelib-neo
+Vcs-Browser: https://github.com/Rhizomatica/mbelib-neo
+Vcs-Git: https://github.com/Rhizomatica/mbelib-neo.git
+
+Package: libmbe-neo-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends:
+ libmbe-neo2 (= ${binary:Version}),
+ ${misc:Depends},
+Description: IMBE/AMBE vocoder library (development files)
+ mbelib-neo decodes and encodes the IMBE and AMBE voice codecs used by
+ digital voice radio: D-STAR, DMR, P25, NXDN, dPMR and others.
+ .
+ This package contains the headers, the static library and the pkg-config
+ file.
+
+Package: libmbe-neo2
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Description: IMBE/AMBE vocoder library
+ mbelib-neo decodes and encodes the IMBE and AMBE voice codecs used by
+ digital voice radio: D-STAR, DMR, P25, NXDN, dPMR and others.

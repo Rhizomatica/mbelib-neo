@@ -1,0 +1,71 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: mbelib-neo
+Upstream-Contact: https://github.com/arancormonk/mbelib-neo
+Source: https://github.com/arancormonk/mbelib-neo
+
+Files: *
+Copyright: 2025-2026 arancormonk <180709949+arancormonk@users.noreply.github.com>
+           2026 Rhizomatica
+License: GPL-2+
+
+Files: src/ambe/ambe3600x2400.c
+       src/ambe/ambe3600x2400_enc.c
+       src/ambe/ambe3600x2450.c
+       src/ambe/dstar_frame.c
+       src/core/mbelib.c
+       src/ecc/ecc.c
+       src/ecc/ecc_const.c
+       src/imbe/imbe7100x4400.c
+       src/imbe/imbe7200x4400.c
+       src/internal/ambe3600x2400_const.h
+       src/internal/ambe3600x2400_internal.h
+       src/internal/ambe3600x2450_const.h
+       src/internal/ecc_const.h
+       src/internal/imbe7200x4400_const.h
+       src/internal/mbelib_const.h
+Copyright: 2010 mbelib Author
+           2025-2026 arancormonk <180709949+arancormonk@users.noreply.github.com>
+License: GPL-2+ and ISC
+ The original mbelib code is under the ISC license (LICENSES/ISC.txt); the
+ later changes are GPL-2.0-or-later.
+
+Files: src/tetra/tetra_acelp_codebooks.c
+       src/internal/tetra_acelp_codebooks.h
+Copyright: ETSI (tables from EN 300 395-2)
+License: LicenseRef-ETSI-EN-300-395-2-data
+ See LICENSES/LicenseRef-ETSI-EN-300-395-2-data.txt and legal/status.md:
+ upstream records the redistribution terms of these tables as unresolved.
+
+Files: pffft/*
+Copyright: 2020 Dario Mambro <dario.mambro@gmail.com>
+           2019 Hayati Ayguen <h_ayguen@web.de>
+           2013 Julien Pommier <pommier@modartt.com>
+           2004 the University Corporation for Atmospheric Research ("UCAR")
+License: LicenseRef-PFFFT
+ See pffft/LICENSE.txt and LICENSES/LicenseRef-PFFFT.txt.
+
+Files: debian/*
+Copyright: 2026 Rafael Diniz <rafael@riseup.net>
+License: GPL-2+
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify it
+ under the terms of the GNU General Public License as published by the Free
+ Software Foundation; either version 2 of the License, or (at your option)
+ any later version.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+License: ISC
+ Permission to use, copy, modify, and distribute this software for any
+ purpose with or without fee is hereby granted, provided that the above
+ copyright notice and this permission notice appear in all copies.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+ SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
+ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+# No tuning for the build host (upstream asks packagers for this); SIMD at
+# the architecture's baseline (SSE2, NEON), AVX2 chosen at run time.
+# PFFFT comes from the orig-pffft component tarball (the pinned upstream
+# commit), not from the network.
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+		-DFETCHCONTENT_SOURCE_DIR_MBELIB_PFFFT=$(CURDIR)/pffft \
+		-DMBELIB_ENABLE_NATIVE=OFF \
+		-DMBELIB_ENABLE_SIMD=ON \
+		-DMBELIB_WARNINGS_AS_ERRORS=OFF \
+		-DMBELIB_BUILD_EXAMPLES=OFF \
+		-DMBELIB_BUILD_TESTS=ON
+
+override_dh_makeshlibs:
+	dh_makeshlibs -V
