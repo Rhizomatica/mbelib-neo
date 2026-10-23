@@ -36,13 +36,14 @@ License: LicenseRef-ETSI-EN-300-395-2-data
  See LICENSES/LicenseRef-ETSI-EN-300-395-2-data.txt and legal/status.md:
  upstream records the redistribution terms of these tables as unresolved.
 
-Files: pffft/*
+Files: third_party/pffft-*
 Copyright: 2020 Dario Mambro <dario.mambro@gmail.com>
            2019 Hayati Ayguen <h_ayguen@web.de>
            2013 Julien Pommier <pommier@modartt.com>
            2004 the University Corporation for Atmospheric Research ("UCAR")
 License: LicenseRef-PFFFT
- See pffft/LICENSE.txt and LICENSES/LicenseRef-PFFFT.txt.
+ The pinned PFFFT sources, as a tarball; see its LICENSE.txt and
+ LICENSES/LicenseRef-PFFFT.txt.
 
 Files: debian/*
 Copyright: 2026 Rafael Diniz <rafael@riseup.net>

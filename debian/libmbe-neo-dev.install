@@ -2,3 +2,4 @@ usr/include/*
 usr/lib/*/libmbe-neo.so
 usr/lib/*/libmbe-neo.a
 usr/lib/*/pkgconfig/*
+usr/lib/*/cmake/*
